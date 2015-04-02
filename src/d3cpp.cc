@@ -84,6 +84,8 @@ struct  SelectionData;
 // Selection
 //------------------------------------------------------------------------------
 
+enum SelectionMode { UPDATE, EXIT, ENTER };
+
 struct Selection {
     Selection() = default;
     Selection(std::vector<Element>& list);
@@ -97,7 +99,12 @@ struct Selection {
     SelectionData<T> data(std::vector<T> &data);
     
     Selection& value(std::function<void(Element&, int)>);
+
+    void update();
+    void exit();
+    void enter();
     
+    SelectionMode mode { UPDATE };
     std::vector<any::Any> join_data;     // data for joining
     std::vector<Element*> elements;
 };
@@ -119,6 +126,10 @@ struct  SelectionData {
 
     template <typename U>
     SelectionData<U> data(std::vector<U> &data);
+
+    void update();
+    void exit();
+    void enter();
     
 public:
     std::unique_ptr<Selection> own_selection;
@@ -307,6 +318,18 @@ SelectionData<T> Selection::data(std::vector<T> &data) {
     return SelectionData<T>(*this);
 }
 
+void Selection::update() {
+    mode = UPDATE;
+}
+
+void Selection::exit() {
+    mode = EXIT;
+}
+
+void Selection::enter() {
+    mode = ENTER;
+}
+
 
 //------------------------------------------------------------------------------
 // SelectionData Impl.
@@ -321,6 +344,21 @@ template <typename T>
 SelectionData<T>::SelectionData(Selection&& selection):
 own_selection(std::unique_ptr<Selection>(new Selection(selection)))
 {}
+
+template <typename T>
+void SelectionData<T>::update() {
+    selection().update();
+}
+
+template <typename T>
+void SelectionData<T>::exit() {
+    selection().exit();
+}
+
+template <typename T>
+void SelectionData<T>::enter() {
+    selection().enter();
+}
 
 template <typename T>
 Selection& SelectionData<T>::selection() {

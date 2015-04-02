@@ -1,0 +1,41 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+
+\begin{document}
+
+\newcommand{\Parent}{{\tt parent}}
+\newcommand{\List}{{\tt list}}
+\newcommand{\Nat}{{\bf N}}
+
+\noindent Let $E$ be a set of {\em elements}. Let $S$ be a {\em
+  selection}. A selection consists in a list $$S = s_{[n]}$$ where $n$
+consists in the number of entries in the selection. An entry is pair
+$s_i = (e_i, e'_{[k_i]})$, where $e_i \in E$ $e'_{k_i} \in E$.
+
+Applying the {\em data} operator $d$ to a selection we generate
+yet another selection with some extra stuff:
+
+\begin{align}
+&d(S,v_{[n]})\\
+&d(S, f )
+\end{align}
+
+\begin{enumerate}
+\item[{\bf [value-mapping-(1)]}] For every entry $s_i$, the following
+  mapping is defined $ e'_j \mapsto v_j $ for $1 \leq j \leq
+  \min{k_i}$. 
+\item[{\bf [value-mapping-(2)]}] For every entry $s_i$, the following
+  mapping is defined $ e'_j \mapsto f( v(e_j) )$ for $1 \leq j \leq
+  \min{k_i}$. Where $v(e_j)$ is the current value associated to $e_j$
+  in the current selection.
+\item[{\bf [enter]}] The enter selection is an addictional selection
+  $S'$ such that there it has a parent element, and an array of data,
+  but no child element. The only operator on the enter selection should
+  be append (which associated data right away). After the append is done
+  the selection is merged back.
+\item[{\bf [exit]}] Selection with elements and no data associated.
+\end{enumerate}
+
+
+\end{document}
