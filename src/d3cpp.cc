@@ -52,6 +52,10 @@ namespace any {
     public:
         std::unique_ptr<ValueBase> content;
     };
+    
+    template <typename T>
+    T& any_cast(const Any &any);
+
 
 }
 
@@ -73,92 +77,233 @@ public:
     std::map<std::string, std::string> attributes;
 };
 
+
+
+
+
+
+
+
+
+
+
+
+
 //------------------------------------------------------------------------------
-// Forward Decl.
+// ElementValue
 //------------------------------------------------------------------------------
 
+struct ElementValue {
+    ElementValue() = default;
+    ElementValue(Element* element);
+    
+    template <typename T>
+    ElementValue(Element* element, T value);
+    
+    Element *element { nullptr };
+    any::Any value;
+};
+
+//------------------------------------------------------------------------------
+// SelectionEntry
+//------------------------------------------------------------------------------
+
+struct SelectionEntry {
+    SelectionEntry() = default;
+    SelectionEntry(Element* parent_node);
+    SelectionEntry(const ElementValue &parent_node, Element* single);
+    SelectionEntry(const ElementValue &parent_node);
+    
+    template<typename T>
+    SelectionEntry& append(Element* e, T value);
+    
+    ElementValue parent_node;
+    std::vector<ElementValue> elements;
+};
+
+
 template <typename T>
-struct  SelectionData;
+struct EnterSelection;
 
 //------------------------------------------------------------------------------
 // Selection
 //------------------------------------------------------------------------------
 
-enum SelectionMode { UPDATE, EXIT, ENTER };
-
+template <typename T>
 struct Selection {
     Selection() = default;
-    Selection(std::vector<Element>& list);
     
-    Selection& add(Element *e);
+    Selection(Element *element);
     
-    template <typename T>
-    Selection& add(Element *e, T obj);
-
-    template <typename T>
-    SelectionData<T> data(std::vector<T> &data);
     
-    Selection& value(std::function<void(Element&, int)>);
-
-    void update();
-    void exit();
-    void enter();
+    SelectionEntry& add(const ElementValue& root, Element* new_child);
+    SelectionEntry& add(const ElementValue& ev);
     
-    SelectionMode mode { UPDATE };
-    std::vector<any::Any> join_data;     // data for joining
-    std::vector<Element*> elements;
+    template <typename U>
+    Selection<U> data(const std::vector<U>& data);
+    Selection<T>& attr(const std::string &key,  std::function<std::string(T,int)> f);
+    Selection append(const std::string& tag);
+    
+    EnterSelection<T>& enter();
+    
+public:
+    void setEnterSelection(const std::vector<T>& extra_data);
+public:
+    std::vector<std::unique_ptr<SelectionEntry>> entries;
+    std::unique_ptr<EnterSelection<T>> enter_selection;
 };
 
+
 //------------------------------------------------------------------------------
-// SelectionData
+// EnterSelection
 //------------------------------------------------------------------------------
 
 template <typename T>
-struct  SelectionData {
-    
-    SelectionData(Selection& selection); // existing selection
-    SelectionData(Selection&& selection); // own a new selection
-
-    SelectionData& attr(const std::string &key, std::function<std::string(T,int)>);
-    SelectionData  append(const std::string &tag);
-    
-    Selection& selection();
-
-    template <typename U>
-    SelectionData<U> data(std::vector<U> &data);
-
-    void update();
-    void exit();
-    void enter();
-    
-public:
-    std::unique_ptr<Selection> own_selection;
-    Selection                 *shared_selection { nullptr };
+struct EnterSelection {
+    EnterSelection(Selection<T> *update_selection, const std::vector<T> &object);
+    Selection<T> append(const std::string& tag);
+    Selection<T> *update_selection;
+    std::vector<T> enter_data; // other data was already mapped
 };
 
+template <typename T>
+EnterSelection<T>::EnterSelection(Selection<T> *update_selection, const std::vector<T> &enter_data):
+    update_selection(update_selection),
+    enter_data(enter_data)
+{}
 
+template <typename T>
+Selection<T> EnterSelection<T>::append(const std::string& tag) {
+    Selection<T> result;
+    for (auto &e: update_selection->entries) {
+        auto &tree = result.add(e->parent_node);
+        for (auto &obj: enter_data) {
+            auto &new_element = e->parent_node.element->append(tag);
+            tree.append(&new_element, obj);
+            e.get()->append(&new_element, obj);
+        }
+    }
+    return result;
+}
 
+//------------------------------------------------------------------------------
+// ElementValue Impl.
+//------------------------------------------------------------------------------
 
+ElementValue::ElementValue(Element* element):
+    element(element)
+{}
 
+template <typename T>
+ElementValue::ElementValue(Element* element, T value):
+element(element),
+value(value)
+{}
 
+//------------------------------------------------------------------------------
+// SelectionEntry Impl.
+//------------------------------------------------------------------------------
 
+SelectionEntry::SelectionEntry(Element* parent_node):
+parent_node(parent_node)
+{}
 
+SelectionEntry::SelectionEntry(const ElementValue &parent_node, Element* single):
+    parent_node(parent_node)
+{
+    elements.push_back({single});
+}
 
+SelectionEntry::SelectionEntry(const ElementValue &parent_node):
+parent_node(parent_node)
+{}
 
+template<typename T>
+SelectionEntry& SelectionEntry::append(Element* e, T value) {
+    elements.push_back({e,value});
+    return *this;
+}
 
+//------------------------------------------------------------------------------
+// Selection Impl.
+//------------------------------------------------------------------------------
 
+template <typename T>
+Selection<T>::Selection(Element* element)
+{
+    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry(element)));
+}
 
+template <typename T>
+SelectionEntry& Selection<T>::add(const ElementValue& root, Element* new_child) {
+    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry {root, new_child}));
+    return *entries.back().get();
+}
 
+template <typename T>
+SelectionEntry& Selection<T>::add(const ElementValue& ev) {
+    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry {ev}));
+    return *entries.back().get();
+}
 
+template <typename T>
+Selection<T> Selection<T>::append(const std::string& tag)
+{
+    Selection<T> result;
+    for (auto &it: entries) {
+        auto &node = it->parent_node.element->append(tag);
+        result.add(it->parent_node, &node);
+    }
+    return result;
+}
 
+template <typename T>
+template <typename U>
+Selection<U> Selection<T>::data(const std::vector<U>& data) {
+    Selection<U> result;
+    
+    // just the bare update part here... not enter or exit
+    // match by index
+    
+    for (auto &e: entries) {
+        
+        auto &tree = result.add(e->parent_node);
 
+        auto it_data  = data.begin();
+        auto it_ev    = e->elements.begin();
+        for (;it_data!= data.end() && it_ev!=e->elements.end();++it_data,++it_ev) {
+            tree.append(it_ev->element, *it_data);
+        }
+        if (it_data != data.end()) {
+            result.setEnterSelection(std::vector<U>(it_data,data.end()));
+        }
+    }
+    
+    return result;
+}
 
+template <typename T>
+Selection<T>& Selection<T>::attr(const std::string &key,  std::function<std::string(T,int)> f) {
+    for (auto &e: entries) {
+        int index = 0;
+        for (auto &it_ev: e->elements) {
+            auto value = any::any_cast<T>(it_ev.value);
+            it_ev.element->attr(key, f(value,index));
+            ++index;
+        }
+    }
+    return *this;
+}
 
+template<typename T>
+void Selection<T>::setEnterSelection(const std::vector<T>& data) {
+    enter_selection.reset(new EnterSelection<T>(this,data));
+}
 
-
-
-
-
+template<typename T>
+EnterSelection<T>& Selection<T>::enter() {
+    return *enter_selection.get();
+}
 
 
 //-------------------------------------------------------------------------------
@@ -256,7 +401,7 @@ const std::string& Element::attr(const std::string &key) {
 std::ostream& operator<<(std::ostream &os, const Element& e) {
     
     std::function<void(const Element& e, int level)> print =  [&os, &print](const Element& e, int level) {
-
+        
         std::string prefix(level*4, ' ');
         
         if (!e.children.size()) {
@@ -278,7 +423,250 @@ std::ostream& operator<<(std::ostream &os, const Element& e) {
             os << prefix << "</" << e.tag << ">" << std::endl;
         }
     };
+    
+    print(e, 0);
+    
+    return os;
+}
 
+
+
+
+
+
+int main() {
+    
+    struct Point {
+        Point() = default;
+        Point(int x, int y):
+            x(x), y(y)
+        {}
+        int x;
+        int y;
+    };
+    
+    std::vector<Point> points { {1,7}, {6,9}, {10,11} };
+    
+    Element root("root");
+    
+    Selection<int> sel(&root);
+
+    
+    
+//    sel.append("a").append("b").data(points)
+//    .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
+//    .attr("y",[](const Point& p, int i) { return std::to_string(p.y); });
+
+    auto update_sel = sel.data(points);
+    
+    update_sel.enter().append("a")
+       .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
+       .attr("y",[](const Point& p, int i) { return std::to_string(p.y); });
+
+    update_sel
+    .attr("x",[](const Point& p, int i) { return std::to_string(p.y); })
+    .attr("y",[](const Point& p, int i) { return std::to_string(p.x); });
+
+    
+    
+    
+//    sel.data(points)
+//       .append("node")
+//          .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
+//          .attr("y",[](const Point& p, int i) { return std::to_string(p.y); })
+//          .data(points)
+//          .append("deeper-node")
+//             .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
+//             .attr("y",[](const Point& p, int i) { return std::to_string(p.y); });
+
+
+    
+    std::cout << root;
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+
+//------------------------------------------------------------------------------
+// Forward Decl.
+//------------------------------------------------------------------------------
+
+template <typename T>
+struct  SelectionData;
+
+//------------------------------------------------------------------------------
+// Selection
+//------------------------------------------------------------------------------
+
+enum SelectionMode { UPDATE, EXIT, ENTER };
+
+struct Selection {
+    Selection() = default;
+    Selection(std::vector<Element>& list);
+    
+    Selection& add(Element *e);
+    
+    template <typename T>
+    Selection& add(Element *e, T obj);
+    
+    template <typename T>
+    SelectionData<T> data(std::vector<T> &data);
+    
+    Selection& value(std::function<void(Element&, int)>);
+    
+    void update();
+    void exit();
+    void enter();
+    
+    SelectionMode mode { UPDATE };
+    std::vector<any::Any> join_data;     // data for joining
+    std::vector<Element*> elements;
+};
+
+//------------------------------------------------------------------------------
+// SelectionData
+//------------------------------------------------------------------------------
+
+template <typename T>
+struct  SelectionData {
+    
+    SelectionData(Selection& selection); // existing selection
+    SelectionData(Selection&& selection); // own a new selection
+    
+    SelectionData& attr(const std::string &key, std::function<std::string(T,int)>);
+    SelectionData  append(const std::string &tag);
+    
+    Selection& selection();
+    
+    template <typename U>
+    SelectionData<U> data(std::vector<U> &data);
+    
+    void update();
+    void exit();
+    void enter();
+    
+public:
+    std::unique_ptr<Selection> own_selection;
+    Selection                 *shared_selection { nullptr };
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//------------------------------------------------------------------------------
+// Element Impl.
+//------------------------------------------------------------------------------
+
+Element::Element(const std::string& tag, Element* parent):
+tag(tag),
+parent(parent)
+{}
+
+Element& Element::append(const std::string &tag) {
+    children.push_back(std::unique_ptr<Element>(new Element(tag,this)));
+    return *children.back().get();
+}
+
+Element& Element::attr(const std::string& key, const std::string& value) {
+    attributes[key] = value;
+    return *this;
+}
+
+const std::string& Element::attr(const std::string &key) {
+    return attributes[key];
+}
+
+
+std::ostream& operator<<(std::ostream &os, const Element& e) {
+    
+    std::function<void(const Element& e, int level)> print =  [&os, &print](const Element& e, int level) {
+        
+        std::string prefix(level*4, ' ');
+        
+        if (!e.children.size()) {
+            os << prefix << "<" << e.tag;
+            for (auto it: e.attributes) {
+                os <<  " " << it.first << "=\"" << it.second << "\"";
+            }
+            os << "/>" << std::endl;
+        }
+        else {
+            os << prefix << "<" << e.tag;
+            for (auto it: e.attributes) {
+                os <<  " " << it.first << "=\"" << it.second << "\"";
+            }
+            os << ">" << std::endl;
+            for (auto &c: e.children) {
+                print(*c.get(), level + 1);
+            }
+            os << prefix << "</" << e.tag << ">" << std::endl;
+        }
+    };
+    
     print(e, 0);
     
     return os;
@@ -386,8 +774,8 @@ SelectionData<T>& SelectionData<T>::attr(const std::string &key, std::function<s
     auto it_element = selection.elements.begin();
     int i=0;
     for (;it_data != selection.join_data.end() && it_element!=selection.elements.end();++it_data,++it_element) {
-//        std::cout << any::any_cast<T>(*it_data).x << std::endl;
-//        std::cout << any::any_cast<T>(*it_data).y << std::endl;
+        //        std::cout << any::any_cast<T>(*it_data).x << std::endl;
+        //        std::cout << any::any_cast<T>(*it_data).y << std::endl;
         auto value = f(any::any_cast<T>(*it_data), i);
         (*it_element)->attr(key, value);
         ++i;
@@ -402,8 +790,8 @@ SelectionData<T> SelectionData<T>::append(const std::string &tag) {
     Selection &selection = this->selection();
     for (auto &it_selection: selection.elements) {
         for (auto &it_data: selection.join_data) {
-//            std::cout << any::any_cast<T>(it_data).x << std::endl;
-//            std::cout << any::any_cast<T>(it_data).y << std::endl;
+            //            std::cout << any::any_cast<T>(it_data).x << std::endl;
+            //            std::cout << any::any_cast<T>(it_data).y << std::endl;
             auto& new_element = it_selection->append(tag);
             sel.add(&new_element, any::any_cast<T>(it_data));
         }
@@ -426,42 +814,7 @@ SelectionData<U> SelectionData<T>::data(std::vector<U> &data) {
     return SelectionData<U>(std::move(sel));
 }
 
-
-
-int main() {
-    
-    struct Point {
-        Point() = default;
-        Point(int x, int y):
-            x(x), y(y)
-        {}
-        int x;
-        int y;
-    };
-    
-    std::vector<Point> points { {1,7}, {6,9}, {10,11} };
-    
-    Element root("root");
-    
-    Selection sel;
-    sel.add(&root);
-    
-    sel.data(points)
-       .append("node")
-          .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
-          .attr("y",[](const Point& p, int i) { return std::to_string(p.y); })
-          .data(points)
-          .append("deeper-node")
-             .attr("x",[](const Point& p, int i) { return std::to_string(p.x); })
-             .attr("y",[](const Point& p, int i) { return std::to_string(p.y); });
-
-
-    
-    std::cout << root;
-    
-}
-
-
+#endif
 
 
 
