@@ -5,60 +5,6 @@
 #include <map>
 #include <string>
 
-
-//------------------------------------------------------------------------------
-// Any
-//------------------------------------------------------------------------------
-
-namespace any {
-
-    //
-    // ValueBase
-    //
-    struct ValueBase {
-        ValueBase() = default;
-        virtual ~ValueBase() {}
-        virtual ValueBase* clone() = 0;
-    };
-    
-    //
-    // Value
-    //
-    template <typename T>
-    struct Value: public ValueBase {
-        Value(const T& value);
-        virtual ValueBase* clone();
-        ~Value();
-    public:
-        T value;
-    };
-
-    //
-    // Variant object
-    //
-    
-    struct Any {
-    public:
-        Any() = default;
-        
-        template <typename T>
-        Any(const T &value);
-        
-        Any(Any &&other);
-        Any(const Any &other);
-        Any& operator=(const Any &other);
-        Any& operator=(Any &&other);
-        
-    public:
-        std::unique_ptr<ValueBase> content;
-    };
-    
-    template <typename T>
-    T& any_cast(const Any &any);
-
-
-}
-
 //------------------------------------------------------------------------------
 // Element
 //------------------------------------------------------------------------------
@@ -78,47 +24,38 @@ public:
 };
 
 
-
-
-
-
-
-
-
-
-
-
-
 //------------------------------------------------------------------------------
 // ElementValue
 //------------------------------------------------------------------------------
 
+template <typename T>
 struct ElementValue {
     ElementValue() = default;
     ElementValue(Element* element);
     
-    template <typename T>
     ElementValue(Element* element, T value);
     
     Element *element { nullptr };
-    any::Any value;
+    T value;
 };
 
 //------------------------------------------------------------------------------
-// SelectionEntry
+// ParentChildren
 //------------------------------------------------------------------------------
 
-struct SelectionEntry {
-    SelectionEntry() = default;
-    SelectionEntry(Element* parent_node);
-    SelectionEntry(const ElementValue &parent_node, Element* single);
-    SelectionEntry(const ElementValue &parent_node);
+template <typename T>
+struct ParentChildren {
     
-    template<typename T>
-    SelectionEntry& append(Element* e, T value);
+    using element_value_type = ElementValue<T>;
     
-    ElementValue parent_node;
-    std::vector<ElementValue> elements;
+    ParentChildren() = default;
+    ParentChildren(Element* parent_node);
+    ParentChildren(Element* parent_node, Element* single);
+    
+    ParentChildren& append(Element* e, T value);
+    
+    Element* parent_node;
+    std::vector<element_value_type> elements;
 };
 
 
@@ -131,13 +68,18 @@ struct EnterSelection;
 
 template <typename T>
 struct Selection {
+public:
+
+    using parent_children_type = ParentChildren<T>;
+    
+public:
+    
     Selection() = default;
     
     Selection(Element *element);
     
-    
-    SelectionEntry& add(const ElementValue& root, Element* new_child);
-    SelectionEntry& add(const ElementValue& ev);
+    parent_children_type& add(Element *parent_node, Element* new_child);
+    parent_children_type& add(Element *parent_node);
     
     template <typename U>
     Selection<U> data(const std::vector<U>& data);
@@ -149,7 +91,7 @@ struct Selection {
 public:
     void setEnterSelection(const std::vector<T>& extra_data);
 public:
-    std::vector<std::unique_ptr<SelectionEntry>> entries;
+    std::vector<std::unique_ptr<parent_children_type>> entries;
     std::unique_ptr<EnterSelection<T>> enter_selection;
 };
 
@@ -166,6 +108,11 @@ struct EnterSelection {
     std::vector<T> enter_data; // other data was already mapped
 };
 
+
+//------------------------------------------------------------------------------
+// EnterSelection Impl.
+//------------------------------------------------------------------------------
+
 template <typename T>
 EnterSelection<T>::EnterSelection(Selection<T> *update_selection, const std::vector<T> &enter_data):
     update_selection(update_selection),
@@ -178,7 +125,7 @@ Selection<T> EnterSelection<T>::append(const std::string& tag) {
     for (auto &e: update_selection->entries) {
         auto &tree = result.add(e->parent_node);
         for (auto &obj: enter_data) {
-            auto &new_element = e->parent_node.element->append(tag);
+            auto &new_element = e->parent_node->append(tag);
             tree.append(&new_element, obj);
             e.get()->append(&new_element, obj);
         }
@@ -190,36 +137,35 @@ Selection<T> EnterSelection<T>::append(const std::string& tag) {
 // ElementValue Impl.
 //------------------------------------------------------------------------------
 
-ElementValue::ElementValue(Element* element):
+template <typename T>
+ElementValue<T>::ElementValue(Element* element):
     element(element)
 {}
 
 template <typename T>
-ElementValue::ElementValue(Element* element, T value):
+ElementValue<T>::ElementValue(Element* element, T value):
 element(element),
 value(value)
 {}
 
 //------------------------------------------------------------------------------
-// SelectionEntry Impl.
+// ParentChildren Impl.
 //------------------------------------------------------------------------------
 
-SelectionEntry::SelectionEntry(Element* parent_node):
+template <typename T>
+ParentChildren<T>::ParentChildren(Element* parent_node):
 parent_node(parent_node)
 {}
 
-SelectionEntry::SelectionEntry(const ElementValue &parent_node, Element* single):
+template <typename T>
+ParentChildren<T>::ParentChildren(Element* parent_node, Element* single):
     parent_node(parent_node)
 {
     elements.push_back({single});
 }
 
-SelectionEntry::SelectionEntry(const ElementValue &parent_node):
-parent_node(parent_node)
-{}
-
 template<typename T>
-SelectionEntry& SelectionEntry::append(Element* e, T value) {
+auto ParentChildren<T>::append(Element* e, T value) -> ParentChildren<T>& {
     elements.push_back({e,value});
     return *this;
 }
@@ -231,18 +177,18 @@ SelectionEntry& SelectionEntry::append(Element* e, T value) {
 template <typename T>
 Selection<T>::Selection(Element* element)
 {
-    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry(element)));
+    entries.push_back(std::unique_ptr<parent_children_type>(new parent_children_type(element)));
 }
 
 template <typename T>
-SelectionEntry& Selection<T>::add(const ElementValue& root, Element* new_child) {
-    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry {root, new_child}));
+auto Selection<T>::add(Element *parent_node, Element* new_child) -> parent_children_type& {
+    entries.push_back(std::unique_ptr<parent_children_type>(new parent_children_type {parent_node, new_child}));
     return *entries.back().get();
 }
 
 template <typename T>
-SelectionEntry& Selection<T>::add(const ElementValue& ev) {
-    entries.push_back(std::unique_ptr<SelectionEntry>(new SelectionEntry {ev}));
+auto Selection<T>::add(Element *parent_node) -> parent_children_type& {
+    entries.push_back(std::unique_ptr<parent_children_type>(new parent_children_type {parent_node}));
     return *entries.back().get();
 }
 
@@ -287,8 +233,7 @@ Selection<T>& Selection<T>::attr(const std::string &key,  std::function<std::str
     for (auto &e: entries) {
         int index = 0;
         for (auto &it_ev: e->elements) {
-            auto value = any::any_cast<T>(it_ev.value);
-            it_ev.element->attr(key, f(value,index));
+            it_ev.element->attr(key, f(it_ev.value,index));
             ++index;
         }
     }
@@ -303,75 +248,6 @@ void Selection<T>::setEnterSelection(const std::vector<T>& data) {
 template<typename T>
 EnterSelection<T>& Selection<T>::enter() {
     return *enter_selection.get();
-}
-
-
-//-------------------------------------------------------------------------------
-// any Impl.
-//-------------------------------------------------------------------------------
-
-namespace any {
-    
-    //
-    // Impl. of Value
-    //
-    
-    template <typename T>
-    Value<T>::Value(const T& value):
-    value { value } // a copy
-    {}
-    
-    template <typename T>
-    ValueBase* Value<T>::clone() {
-        return new Value<T>(value);
-    }
-    
-    template <typename T>
-    Value<T>::~Value() {}
-    
-    //
-    // Any Impl.
-    //
-    
-    template <typename T>
-    Any::Any(const T &value) {
-        content.reset(new Value<T>(value));
-    }
-    
-    Any::Any(Any &&other)
-    {
-        content.swap(other.content);
-    }
-    
-    Any::Any(const Any &other)
-    {
-        if (other.content)
-            content.reset(other.content->clone());
-    }
-    
-    Any& Any::operator=(const Any &other)
-    {
-        if (other.content)
-            content.reset(other.content->clone());
-        else
-            content.reset();
-        return *this;
-    }
-    
-    Any& Any::operator=(Any &&other)
-    {
-        content.swap(other.content);
-        return *this;
-    }
-    
-    template <typename T>
-    T& any_cast(const Any &any) {
-        auto p = dynamic_cast<Value<T>*>(any.content.get());
-        if (!p)
-            throw std::runtime_error("ooops");
-        return p->value;
-    }
-    
 }
 
 //------------------------------------------------------------------------------
@@ -429,11 +305,9 @@ std::ostream& operator<<(std::ostream &os, const Element& e) {
     return os;
 }
 
-
-
-//
+//------------------------------------------------------------------------------
 // main
-//
+//------------------------------------------------------------------------------
 
 int main() {
     
