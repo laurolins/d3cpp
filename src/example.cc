@@ -4,7 +4,6 @@
 #include <functional>
 #include <map>
 #include <string>
-#include <deque>
 
 #include "d3cpp.hh"
 
@@ -49,7 +48,7 @@ struct ElementIterator {
     
     Element* next();
     
-    std::deque<Item> stack;
+    std::vector<Item> stack;
     int max_depth { UNBOUNDED }; // indicates any level
 };
 
@@ -71,7 +70,7 @@ void Element::remove() {
 }
 
 Element& Element::append(const std::string &tag) {
-    children.push_back(std::unique_ptr<Element>(new Element(tag,this)));
+    children.push_back(std::unique_ptr<Element>(new Element(tag,this,(int) children.size())));
     return *children.back().get();
 }
 
@@ -84,25 +83,21 @@ const std::string& Element::attr(const std::string &key) {
     return attributes[key];
 }
 
-
 std::ostream& operator<<(std::ostream &os, const Element& e) {
     
     std::function<void(const Element& e, int level)> print =  [&os, &print](const Element& e, int level) {
         
         std::string prefix(level*4, ' ');
         
+        os << prefix << "<" << e.tag;
+        for (auto it: e.attributes) {
+            os <<  " " << it.first << "=\"" << it.second << "\"";
+        }
+
         if (!e.children.size()) {
-            os << prefix << "<" << e.tag;
-            for (auto it: e.attributes) {
-                os <<  " " << it.first << "=\"" << it.second << "\"";
-            }
             os << "/>" << std::endl;
         }
         else {
-            os << prefix << "<" << e.tag;
-            for (auto it: e.attributes) {
-                os <<  " " << it.first << "=\"" << it.second << "\"";
-            }
             os << ">" << std::endl;
             for (auto &c: e.children) {
                 if (c)
@@ -146,8 +141,8 @@ Element* ElementIterator::next() {
     if (stack.empty())
         return nullptr;
     
-    Item item = stack.front();
-    stack.pop_front();
+    Item item = stack.back();
+    stack.pop_back();
     
     // schedule processing of childrens
     if (max_depth == UNBOUNDED || item.depth < max_depth) {
@@ -233,10 +228,12 @@ int main() {
         .selectAll(tag_predicate("a"), gen_iter)
         .data(points); // join data into current selection
         
-        auto exit_selection = join_selection
-        .exit();
-        
-        exit_selection.remove([](Element *e) { e->remove(); });
+        join_selection
+        .exit()
+        .remove([](Element *e) {
+            // std::cerr << "removing " <<  *e << std::endl;
+            e->remove();
+        });
         
         join_selection
         .call([](Element *e, Point p) {

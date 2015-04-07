@@ -73,7 +73,6 @@ namespace d3cpp {
         using data_type            = T;
         using selection_type       = Selection;
         using enter_selection_type = EnterSelection<E, T>;
-        using exit_selection_type  = ExitSelection<E, T>;
         using group_type           = Group<E, T>;
         
         using predicate_type       = std::function<bool(const E*)>;
@@ -88,13 +87,17 @@ namespace d3cpp {
         Selection() = default;
         
         Selection(E *element);
+
+        Selection(const selection_type& other);
+        Selection(selection_type&& other);
+        Selection& operator=(const selection_type& other);
+        Selection& operator=(selection_type&& other);
         
         group_type& _group_add(E *parent_node, E* new_child);
         group_type& _group_add(E *parent_node);
         
         template <typename U>
         Selection<E,U> data(const std::vector<U>& data);
-        
         
         // attr and append should be abstracted to applying a function...
         // Selection<E,T>& attr(const std::string &key,  std::function<std::string(T,int)> f);
@@ -108,20 +111,19 @@ namespace d3cpp {
         
         selection_type&       call(call_type f);
         
-        void remove(remove_from_document_function_type remove_from_document)
+        selection_type&       remove(remove_from_document_function_type remove_from_document_function);
         
     public:
-        void _enterSelection_init(const std::vector<T>& extra_data);
-        void _enterSelection_add(group_type* main_selection_group, int index);
+        enter_selection_type& _enterSelection_init(const std::vector<T>& extra_data);
+        void                  _enterSelection_add(group_type* main_selection_group, int index);
         
     public:
-        void _exitSelection_init();
-        void _exitSelection_add(remove_from_group_function_type remove_from_group_function);
+        selection_type& _exitSelection_init();
         
     public:
         std::vector<std::unique_ptr<group_type>> groups;
         std::unique_ptr<enter_selection_type> enter_selection;
-        std::unique_ptr<exit_selection_type>  exit_selection;
+        std::unique_ptr<selection_type>       exit_selection;
     };
     
     
@@ -173,40 +175,6 @@ namespace d3cpp {
         std::vector<Entry> entries;
         std::vector<T>     enter_data;
     };
-    
-    //------------------------------------------------------------------------------
-    // ExitSelection
-    //------------------------------------------------------------------------------
-    
-    template <typename E, typename T>
-    struct ExitSelection {
-        
-        using remove_from_document_function_type = std::function<void(E*)>;
-        using remove_from_group_function_type    = std::function<void(remove_from_document_function_type)>;
-        using group_type                         = Group<E,T>;
-        using selection_type                     = Selection<E,T>;
-        using exit_selection_type                = ExitSelection<E,T>;
-        
-        struct Entry {
-            Entry() = default;
-            Entry(remove_from_group_function_type remove_from_group_function);
-            remove_from_group_function_type  remove_from_group_function;
-        };
-        
-        ExitSelection(selection_type *update_selection);
-        
-        ExitSelection& add(remove_from_group_function_type f);
-        
-        void remove(remove_from_document_function_type f);
-        
-        selection_type *update_selection;
-        std::vector<Entry> entries;
-        
-        // let's do by index first
-    };
-    
-    
-    
     
     //------------------------------------------------------------------------------
     // ElementValue Impl.
@@ -262,6 +230,34 @@ namespace d3cpp {
     }
     
     template <typename E, typename T>
+    Selection<E,T>::Selection(const selection_type& other) {
+        if (other.exit_selection || other.enter_selection)
+            throw std::runtime_error("cannot copy a selection after a join...");
+        for (auto &g: other.groups) {
+            groups.push_back(std::unique_ptr<group_type>(new group_type(*g.get())));
+        }
+    }
+
+    template <typename E, typename T>
+    Selection<E,T>::Selection(selection_type&& other) {
+        groups.swap(other.groups);
+        enter_selection.swap(other.enter_selection);
+        exit_selection.swap(other.exit_selection);
+    }
+
+    template <typename E, typename T>
+    auto Selection<E,T>::operator=(const selection_type& other) -> selection_type& {
+        *this = other;
+        return *this;
+    }
+    
+    template <typename E, typename T>
+    auto Selection<E,T>::operator=(selection_type&& other) -> selection_type& {
+        *this = std::move(other);
+        return *this;
+    }
+    
+    template <typename E, typename T>
     auto Selection<E,T>::_group_add(E *parent_node, E* new_child) -> group_type& {
         groups.push_back(std::unique_ptr<group_type>(new group_type {parent_node, new_child}));
         return *groups.back().get();
@@ -293,18 +289,21 @@ namespace d3cpp {
         // match by index
         
         result._enterSelection_init(data);
-        result._exitSelection_init();
-        
-        Selection<E,U> exit_selection;
+        Selection<E,U>& exit_selection = result._exitSelection_init();
         
         for (auto &g: groups) {
             
             auto &new_group = result._group_add(g->parent_node);
             
-            auto it_data  = data.begin();
-            auto it_ev    = g->elements.begin();
+            auto it_data     = data.begin();
+            auto it_data_end = data.end();
+
+            auto it_ev       = g->elements.begin();
+            auto it_ev_end   = g->elements.end();
+
+            
             auto index = 0;
-            for (;it_data!= data.end() && it_ev!=g->elements.end();++it_data,++it_ev) {
+            for (;it_data!= it_data_end && it_ev != it_ev_end ;++it_data,++it_ev) {
                 new_group.add(it_ev->element, *it_data);
                 ++index;
             }
@@ -315,43 +314,23 @@ namespace d3cpp {
             
             result._enterSelection_add(&new_group,index);
             
-            auto original_group = g.get();
-            std::cerr << "registering exit selection on original_group: " << original_group << " size: " << original_group->elements.size() << std::endl;
-            
-            using ev_type = decltype(g->elements[0]);
+            using ev_type = decltype(*it_ev);
             if (it_ev != g->elements.end()) {
                 auto &exit_group = exit_selection._group_add({g->parent_node});
-                std::for_each(it_ev, g->elements.end(), [&exit_group](const ev_type &ev) {
+                std::for_each(it_ev, it_ev_end, [&exit_group](const ev_type &ev) {
+                    // std::cerr << "will remove element" << ev.element << std::endl;
                     exit_group.add(ev.element);
                 });
             }
-            
-            //
-            // if (it_ev != e->elements.end()) {
-            //    result.setExitSelection(std::vector<U>(it_ev,))
-            // }
-            //
-            
         }
         
         return result;
     }
     
-    //template <typename E, typename T>
-    //Selection<E,T>& Selection<E,T>::attr(const std::string &key,  std::function<std::string(T,int)> f) {
-    //    for (auto &g: groups) {
-    //        int index = 0;
-    //        for (auto &it_ev: g->elements) {
-    //            it_ev.element->attr(key, f(it_ev.value,index));
-    //            ++index;
-    //        }
-    //    }
-    //    return *this;
-    //}
-    
     template<typename E, typename T>
-    void Selection<E,T>::_enterSelection_init(const std::vector<T>& extra_data) {
+    auto Selection<E,T>::_enterSelection_init(const std::vector<T>& extra_data) -> enter_selection_type& {
         enter_selection.reset(new enter_selection_type(this,extra_data));
+        return *enter_selection.get();
     }
     
     template<typename E, typename T>
@@ -362,17 +341,10 @@ namespace d3cpp {
     }
     
     template<typename E, typename T>
-    void Selection<E,T>::_exitSelection_init() {
-        exit_selection.reset(new exit_selection_type(this));
+    auto Selection<E,T>::_exitSelection_init() -> selection_type& {
+        exit_selection.reset(new selection_type());
+        return *exit_selection.get();
     }
-    
-    template<typename E, typename T>
-    void Selection<E,T>::_exitSelection_add(remove_from_group_function_type remove_from_group_function) {
-        if (!enter_selection)
-            throw std::runtime_error("ooops");
-        exit_selection->add(remove_from_group_function);
-    }
-    
     
     template<typename E, typename T>
     auto Selection<E,T>::enter() -> enter_selection_type& {
@@ -380,7 +352,7 @@ namespace d3cpp {
     }
     
     template<typename E, typename T>
-    auto Selection<E,T>::exit() -> exit_selection_type& {
+    auto Selection<E,T>::exit() -> selection_type& {
         return *exit_selection.get();
     }
     
@@ -402,6 +374,17 @@ namespace d3cpp {
         return result;
     }
     
+    template <typename E, typename T>
+    auto Selection<E,T>::remove(remove_from_document_function_type remove_from_document_function) -> selection_type& {
+        for (auto &g: groups) {
+            for (auto &ev: g->elements) {
+                // std::cerr << "removing element... " << ev.element << std::endl;
+                remove_from_document_function(ev.element);
+            }
+            g->elements.clear();
+        }
+        return *this;
+    }
     
     template<typename E, typename T>
     auto Selection<E,T>::call(call_type f) -> selection_type& {
@@ -466,35 +449,7 @@ namespace d3cpp {
         }
         return result;
     }
-    
-    
-    //--------------------------------------------------------------------------------------
-    // ExitSelection Impl.
-    //--------------------------------------------------------------------------------------
-    
-    template <typename E, typename T>
-    ExitSelection<E,T>::Entry::Entry(remove_from_group_function_type remove_from_group_function):
-    remove_from_group_function(remove_from_group_function)
-    {}
-    
-    template <typename E, typename T>
-    ExitSelection<E,T>::ExitSelection(selection_type *update_selection):
-    update_selection(update_selection)
-    {}
-    
-    template <typename E, typename T>
-    auto ExitSelection<E,T>::add(remove_from_group_function_type remove_from_group_function) -> exit_selection_type& {
-        entries.push_back({remove_from_group_function});
-        return *this;
-    }
-    
-    template <typename E, typename T>
-    void ExitSelection<E,T>::remove(remove_from_document_function_type remove_from_document_function) {
-        for (auto &e: entries) {
-            e.remove_from_group_function(remove_from_document_function);
-        }
-    }
-    
+
     //------------------------------------------------------------------------------
     // Document Impl.
     //------------------------------------------------------------------------------
