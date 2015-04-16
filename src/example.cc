@@ -206,7 +206,7 @@ int main() {
         
         selection
         .enter()
-        .append([](Element* parent) { return &parent->append("a"); })
+        .append([](Element* parent, const Point& p) { return &parent->append("a"); })
         .call([](Element *e, Point p) {
             e->attr("x",std::to_string(p.x));
             e->attr("y",std::to_string(p.y));
@@ -257,7 +257,7 @@ int main() {
         .data(names);
         
         s1.enter()
-        .append([](Element* parent) { return &parent->append("list"); });
+        .append([](Element* parent, const list_type &list) { return &parent->append("list"); });
 
         
         // couldn't use an inline version of this function... why?
@@ -279,7 +279,7 @@ int main() {
         std::cout << s2 << std::endl;
         
         s2.enter()
-        .append([](Element* parent) { return &parent->append("name"); });
+        .append([](Element* parent, const std::string &st) { return &parent->append("name"); });
         
         s2
         .call([](Element* e, std::string s) { e->attr("str", s); });
