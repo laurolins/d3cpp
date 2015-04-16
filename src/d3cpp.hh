@@ -169,7 +169,7 @@ namespace d3cpp {
         using group_type           = Group<E, T>;
         using selection_type       = Selection<E, T>;
         using enter_selection_type = EnterSelection<E, T>;
-        using append_function_type = std::function<E*(E*)>;
+        using append_function_type = std::function<E*(E*, const T&)>;
         
         struct Entry {
             Entry() = default;
@@ -556,7 +556,7 @@ namespace d3cpp {
             auto &data = (mode == SINGLE_SHARED_LIST) ? enter_data.at(0) : enter_data.at(index);
             
             for (auto it=data.begin() + e.index;it!=data.end();++it) {
-                auto new_element = append(e.group->parent.element); // could use the data
+                auto new_element = append(e.group->parent.element, *it); // could use the data
                 new_group.add(new_element, *it);
                 e.group->add(new_element, *it);
             }
