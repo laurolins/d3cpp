@@ -244,5 +244,63 @@ int main() {
         std::cout << root;
     }
 
+    
+    {   // forwarding data based on parent node's current data
+
+        using list_type = std::vector<std::string>;
+        
+        std::vector<list_type> names { {"lauro","lins","da silva"}, {"sofia","melo"} };
+        
+        // append lists
+        auto s1 = document
+        .selectAll(tag_predicate("list"), gen_iter)
+        .data(names);
+        
+        s1.enter()
+        .append([](Element* parent) { return &parent->append("list"); });
+
+        
+        // couldn't use an inline version of this function... why?
+        // mapping
+        
+        using mapping_type = std::function<list_type(const list_type&)> ;
+        
+//        std::function<list_type(const list_type&)> mapping = [](const list_type &s) {
+//            return s;
+//        };
+        
+        //
+        auto s2 = s1
+        .selectAll(tag_predicate("name"), gen_iter)
+        .data( (mapping_type) [](const list_type &s) { return s; });
+        
+        // .data(mapping);
+        
+        std::cout << s2 << std::endl;
+        
+        s2.enter()
+        .append([](Element* parent) { return &parent->append("name"); });
+        
+        s2
+        .call([](Element* e, std::string s) { e->attr("str", s); });
+        
+        std::cout << root;
+    }
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

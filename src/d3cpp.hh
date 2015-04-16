@@ -41,13 +41,13 @@ namespace d3cpp {
         using element_value_type = ElementValue<E, T>;
         
         Group() = default;
-        Group(E* parent_node);
-        Group(E* parent_node, E* single);
+        Group(element_value_type parent);
+        // Group(E* parent_node, E* single);
         
         Group& add(E* e, T value);
         Group& add(E* e);
         
-        E* parent_node;
+        element_value_type parent;
         std::vector<element_value_type> elements;
     };
     
@@ -74,11 +74,14 @@ namespace d3cpp {
         using selection_type       = Selection;
         using enter_selection_type = EnterSelection<E, T>;
         using group_type           = Group<E, T>;
+        using element_value_type   = ElementValue<E,T>;
         
         using predicate_type       = std::function<bool(const E*)>;
         using append_function_type = std::function<E*(E*)>;
         using call_type            = std::function<void(E*, T)>;
 
+
+        
         using remove_from_document_function_type = std::function<void(E*)>;
         using remove_from_group_function_type = std::function<void(remove_from_document_function_type)>;
         
@@ -93,11 +96,15 @@ namespace d3cpp {
         Selection& operator=(const selection_type& other);
         Selection& operator=(selection_type&& other);
         
-        group_type& _group_add(E *parent_node, E* new_child);
-        group_type& _group_add(E *parent_node);
+        // group_type& _group_add(E *parent_node, E* new_child);
+        group_type& _group_add(element_value_type parent);
+        group_type& _group_add(element_type *parent_node);
         
         template <typename U>
         Selection<E,U> data(const std::vector<U>& data);
+
+        template <typename U>
+        Selection<E,U> data(std::function<std::vector<U>(const T&)>); // forwarding data based on original data
         
         // attr and append should be abstracted to applying a function...
         // Selection<E,T>& attr(const std::string &key,  std::function<std::string(T,int)> f);
@@ -114,9 +121,13 @@ namespace d3cpp {
         selection_type&       remove(remove_from_document_function_type remove_from_document_function);
         
     public:
-        enter_selection_type& _enterSelection_init(const std::vector<T>& extra_data);
-        void                  _enterSelection_add(group_type* main_selection_group, int index);
         
+        enter_selection_type& _enterSelection_init(); // data per group mode
+        void                  _enterSelection_add(group_type* main_selection_group, int index, const std::vector<T>& group_data);  // data per group mode
+
+        enter_selection_type& _enterSelection_init(const std::vector<T>& shared_data); // shared data mode
+        void                  _enterSelection_add(group_type* main_selection_group, int index); // shared data mode
+
     public:
         selection_type& _exitSelection_init();
         
@@ -153,8 +164,10 @@ namespace d3cpp {
     template <typename E, typename T>
     struct EnterSelection {
         
-        using group_type = Group<E, T>;
-        using selection_type = Selection<E, T>;
+        enum Mode { SINGLE_SHARED_LIST, ONE_LIST_PER_GROUP };
+        
+        using group_type           = Group<E, T>;
+        using selection_type       = Selection<E, T>;
         using enter_selection_type = EnterSelection<E, T>;
         using append_function_type = std::function<E*(E*)>;
         
@@ -165,15 +178,20 @@ namespace d3cpp {
             int          index;
         };
         
-        EnterSelection(selection_type *update_selection, const std::vector<T> &enter_data);
+        EnterSelection(selection_type *update_selection); // shared list mode
+        EnterSelection(selection_type *update_selection, const std::vector<T> &enter_data); // shared list mode
         
-        enter_selection_type& add(group_type* update_selection_group, int index);
+        enter_selection_type& _add(group_type* update_selection_group, int index);
+        enter_selection_type& _add(group_type* update_selection_group, int index, const std::vector<T> &enter_data);
+        
         selection_type        append(append_function_type a);
         
     public:
+        // there are two modes
+        Mode mode;
         selection_type *update_selection;
-        std::vector<Entry> entries;
-        std::vector<T>     enter_data;
+        std::vector<Entry>          entries;
+        std::vector<std::vector<T>> enter_data;
     };
     
     //------------------------------------------------------------------------------
@@ -196,16 +214,16 @@ namespace d3cpp {
     //------------------------------------------------------------------------------
     
     template <typename E, typename T>
-    Group<E,T>::Group(E* parent_node):
-    parent_node(parent_node)
+    Group<E,T>::Group(element_value_type parent):
+    parent(parent)
     {}
     
-    template <typename E, typename T>
-    Group<E,T>::Group(E* parent_node, E* single):
-    parent_node(parent_node)
-    {
-        elements.push_back({single});
-    }
+//    template <typename E, typename T>
+//    Group<E,T>::Group(E* parent_node, E* single):
+//    parent(parent_node)
+//    {
+//        elements.push_back({single});
+//    }
     
     template<typename E, typename T>
     auto Group<E,T>::add(E* e, T value) -> Group& {
@@ -257,18 +275,24 @@ namespace d3cpp {
         return *this;
     }
     
-    template <typename E, typename T>
-    auto Selection<E,T>::_group_add(E *parent_node, E* new_child) -> group_type& {
-        groups.push_back(std::unique_ptr<group_type>(new group_type {parent_node, new_child}));
-        return *groups.back().get();
-    }
+//    template <typename E, typename T>
+//    auto Selection<E,T>::_group_add(E *parent_node, E* new_child) -> group_type& {
+//        groups.push_back(std::unique_ptr<group_type>(new group_type {parent_node, new_child}));
+//        return *groups.back().get();
+//    }
     
     template <typename E, typename T>
-    auto Selection<E,T>::_group_add(E *parent_node) -> group_type& {
+    auto Selection<E,T>::_group_add(element_value_type parent) -> group_type& {
+        groups.push_back(std::unique_ptr<group_type>(new group_type {parent}));
+        return *groups.back().get();
+    }
+
+    template <typename E, typename T>
+    auto Selection<E,T>::_group_add(element_type *parent_node) -> group_type& {
         groups.push_back(std::unique_ptr<group_type>(new group_type {parent_node}));
         return *groups.back().get();
     }
-    
+
     template <typename E, typename T>
     auto Selection<E,T>::append(append_function_type append_function) -> selection_type
     {
@@ -293,7 +317,7 @@ namespace d3cpp {
         
         for (auto &g: groups) {
             
-            auto &new_group = result._group_add(g->parent_node);
+            auto &new_group = result._group_add(g->parent.element);
             
             auto it_data     = data.begin();
             auto it_data_end = data.end();
@@ -316,7 +340,57 @@ namespace d3cpp {
             
             using ev_type = decltype(*it_ev);
             if (it_ev != g->elements.end()) {
-                auto &exit_group = exit_selection._group_add({g->parent_node});
+                auto &exit_group = exit_selection._group_add(g->parent.element);
+                std::for_each(it_ev, it_ev_end, [&exit_group](const ev_type &ev) {
+                    // std::cerr << "will remove element" << ev.element << std::endl;
+                    exit_group.add(ev.element);
+                });
+            }
+        }
+        
+        return result;
+    }
+
+    
+    template <typename E, typename T>
+    template <typename U>
+    Selection<E,U> Selection<E,T>::data(std::function<std::vector<U>(const T&)> mapping) {
+        Selection<E,U> result;
+        
+        // just the bare update part here... not enter or exit
+        // match by index
+
+        result._enterSelection_init();
+
+        Selection<E,U>& exit_selection = result._exitSelection_init();
+        
+        for (auto &g: groups) {
+
+            auto data = mapping(g->parent.value);
+            
+            auto &new_group = result._group_add(g->parent.element);
+            
+            auto it_data     = data.begin();
+            auto it_data_end = data.end();
+            
+            auto it_ev       = g->elements.begin();
+            auto it_ev_end   = g->elements.end();
+            
+            auto index = 0;
+            for (;it_data!= it_data_end && it_ev != it_ev_end ;++it_data,++it_ev) {
+                new_group.add(it_ev->element, *it_data);
+                ++index;
+            }
+            
+            //
+            // this is still wrong
+            //
+            
+            result._enterSelection_add(&new_group,index,data);
+            
+            using ev_type = decltype(*it_ev);
+            if (it_ev != g->elements.end()) {
+                auto &exit_group = exit_selection._group_add(g->parent.element);
                 std::for_each(it_ev, it_ev_end, [&exit_group](const ev_type &ev) {
                     // std::cerr << "will remove element" << ev.element << std::endl;
                     exit_group.add(ev.element);
@@ -337,9 +411,22 @@ namespace d3cpp {
     void Selection<E,T>::_enterSelection_add(group_type *main_selection_parent_children, int index) {
         if (!enter_selection)
             throw std::runtime_error("ooops");
-        enter_selection->add(main_selection_parent_children,index);
+        enter_selection->_add(main_selection_parent_children,index);
+    }
+
+    template<typename E, typename T>
+    auto Selection<E,T>::_enterSelection_init() -> enter_selection_type& {
+        enter_selection.reset(new enter_selection_type(this));
+        return *enter_selection.get();
     }
     
+    template<typename E, typename T>
+    void Selection<E,T>::_enterSelection_add(group_type *main_selection_parent_children, int index, const std::vector<T>& group_data) {
+        if (!enter_selection)
+            throw std::runtime_error("ooops");
+        enter_selection->_add(main_selection_parent_children,index,group_data);
+    }
+
     template<typename E, typename T>
     auto Selection<E,T>::_exitSelection_init() -> selection_type& {
         exit_selection.reset(new selection_type());
@@ -363,7 +450,7 @@ namespace d3cpp {
         for (auto &group: groups) {
             for (auto &ev: group->elements) {
                 auto it = gen_iterator(ev.element);
-                group_type& g = result._group_add(ev.element);
+                group_type& g = result._group_add(ev);
                 while (auto e = it.next()) {
                     if (predicate(e)) {
                         g.add(e);
@@ -425,27 +512,55 @@ namespace d3cpp {
     //------------------------------------------------------------------------------
     
     template <typename E, typename T>
-    EnterSelection<E,T>::EnterSelection(selection_type *update_selection, const std::vector<T> &enter_data):
+    EnterSelection<E,T>::EnterSelection(selection_type *update_selection, const std::vector<T> &shared_data):
     update_selection(update_selection),
-    enter_data(enter_data)
+    mode(SINGLE_SHARED_LIST)
+    {
+        enter_data.push_back(shared_data);
+    }
+
+    template <typename E, typename T>
+    EnterSelection<E,T>::EnterSelection(selection_type *update_selection):
+    update_selection(update_selection),
+    mode(ONE_LIST_PER_GROUP)
     {}
     
     template <typename E, typename T>
-    auto EnterSelection<E,T>::add(group_type* update_selection_group, int index) -> enter_selection_type& {
+    auto EnterSelection<E,T>::_add(group_type* update_selection_group, int index) -> enter_selection_type& {
+        
+        if (mode != SINGLE_SHARED_LIST)
+            throw std::runtime_error("incompatible add when adding without a list should be in SINGLE_SHARED_MODE");
+        
         entries.push_back({update_selection_group, index});
         return *this;
     }
-    
+
+    template <typename E, typename T>
+    auto EnterSelection<E,T>::_add(group_type* update_selection_group, int index, const std::vector<T> &group_data) -> enter_selection_type& {
+        
+        if (mode != ONE_LIST_PER_GROUP)
+            throw std::runtime_error("incompatible add when adding without a list should be in ONE_LIST_PER_GROUP");
+        
+        entries.push_back({update_selection_group, index});
+        enter_data.push_back(group_data);
+        return *this;
+    }
+
     template <typename E, typename T>
     auto EnterSelection<E,T>::append(append_function_type append) -> selection_type {
         selection_type result;
+        auto index = 0;
         for (auto &e: entries) {
-            auto &new_group = result._group_add(e.group->parent_node);
-            for (auto it=enter_data.begin() + e.index;it!=enter_data.end();++it) {
-                auto new_element = append(e.group->parent_node);
+            auto &new_group = result._group_add(e.group->parent);
+            
+            auto &data = (mode == SINGLE_SHARED_LIST) ? enter_data.at(0) : enter_data.at(index);
+            
+            for (auto it=data.begin() + e.index;it!=data.end();++it) {
+                auto new_element = append(e.group->parent.element); // could use the data
                 new_group.add(new_element, *it);
                 e.group->add(new_element, *it);
             }
+            ++index;
         }
         return result;
     }
