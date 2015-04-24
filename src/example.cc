@@ -18,7 +18,7 @@ public:
     Element(const std::string& tag, Element* parent=nullptr, int parent_index=0);
     Element& append(const std::string &tag);
     Element& attr(const std::string& key, const std::string& value);
-    const std::string& attr(const std::string &key);
+    const std::string& attr(const std::string &key) const;
     void remove();
 public:
     std::string tag;
@@ -79,8 +79,8 @@ Element& Element::attr(const std::string& key, const std::string& value) {
     return *this;
 }
 
-const std::string& Element::attr(const std::string &key) {
-    return attributes[key];
+const std::string& Element::attr(const std::string &key) const {
+    return attributes.at(key);
 }
 
 std::ostream& operator<<(std::ostream &os, const Element& e) {
@@ -183,7 +183,6 @@ int main() {
     };
     
     
-    Element root("root");
     
     using document_type = d3cpp::Document<Element>;
     
@@ -193,99 +192,301 @@ int main() {
     };
 
     std::function<ElementIterator(Element*)> gen_iter  = [](Element* e) { return ElementIterator(e); };
-    
-    document_type document(&root);
-    
 
     {
-        std::vector<Point> points { {1,7}, {6,9}, {10,11} };
-
-        auto selection = document
-        .selectAll(tag_predicate("a"), gen_iter)
-        .data(points); // join data into current selection
+        Element root("root");
+        document_type document(&root);
+        {
+            std::vector<Point> points { {1,7}, {6,9}, {10,11} };
+            
+            auto selection = document
+            .selectAll(tag_predicate("a"), gen_iter)
+            .data(points); // join data into current selection
+            
+            selection
+            .enter()
+            .append([](Element* parent, const Point& p) { return &parent->append("a"); })
+            .call([](Element *e, Point p) {
+                e->attr("x",std::to_string(p.x));
+                e->attr("y",std::to_string(p.y));
+            });
+            
+            selection
+            .call([](Element *e, Point p) {
+                e->attr("new_attr","ABC");
+            });
+            
+            std::cout << root;
+        }
         
-        selection
-        .enter()
-        .append([](Element* parent, const Point& p) { return &parent->append("a"); })
-        .call([](Element *e, Point p) {
-            e->attr("x",std::to_string(p.x));
-            e->attr("y",std::to_string(p.y));
-        });
         
-        selection
-        .call([](Element *e, Point p) {
-            e->attr("new_attr","ABC");
-        });
+        {
+            std::vector<Point> points { {29,30} };
+            
+            auto join_selection = document
+            .selectAll(tag_predicate("a"), gen_iter)
+            .data(points); // join data into current selection
+            
+            join_selection
+            .exit()
+            .remove([](Element *e) {
+                // std::cerr << "removing " <<  *e << std::endl;
+                e->remove();
+            });
+            
+            join_selection
+            .call([](Element *e, Point p) {
+                e->attr("x_new",std::to_string(p.x));
+                e->attr("y_new",std::to_string(p.y));
+            });
+            
+            std::cout << root;
+        }
         
-        std::cout << root;
+        
+        {   // forwarding data based on parent node's current data
+            
+            using list_type = std::vector<std::string>;
+            
+            std::vector<list_type> names { {"newton","eintstein","pythagoras"}, {"feyman","erdos"} };
+            
+            // append lists
+            auto s1 = document
+            .selectAll(tag_predicate("list"), gen_iter)
+            .data(names);
+            
+            s1.enter()
+            .append([](Element* parent, const list_type &list) { return &parent->append("list"); });
+            
+            // couldn't use an inline version of this function... why?
+            // mapping
+            
+            using mapping_type = std::function<list_type(const list_type&)> ;
+            
+            //
+            auto s2 = s1
+            .selectAll(tag_predicate("name"), gen_iter)
+            .data( (mapping_type) [](const list_type &s) { return s; });
+            
+            // .data(mapping);
+            
+            std::cout << s2 << std::endl;
+            
+            s2.enter()
+            .append([](Element* parent, const std::string &st) { return &parent->append("name"); });
+            
+            s2
+            .call([](Element* e, std::string s) { e->attr("str", s); });
+            
+            std::cout << root;
+        }
     }
-    
-    
-    {
-        std::vector<Point> points { {29,30} };
-
-        auto join_selection = document
-        .selectAll(tag_predicate("a"), gen_iter)
-        .data(points); // join data into current selection
-        
-        join_selection
-        .exit()
-        .remove([](Element *e) {
-            // std::cerr << "removing " <<  *e << std::endl;
-            e->remove();
-        });
-        
-        join_selection
-        .call([](Element *e, Point p) {
-            e->attr("x_new",std::to_string(p.x));
-            e->attr("y_new",std::to_string(p.y));
-        });
-        
-        std::cout << root;
-    }
 
     
-    {   // forwarding data based on parent node's current data
+    
+    { // mapping join
 
-        using list_type = std::vector<std::string>;
-        
-        std::vector<list_type> names { {"lauro","lins","da silva"}, {"sofia","melo"} };
-        
-        // append lists
-        auto s1 = document
-        .selectAll(tag_predicate("list"), gen_iter)
-        .data(names);
-        
-        s1.enter()
-        .append([](Element* parent, const list_type &list) { return &parent->append("list"); });
+        std::cout << "##### data join using a mapping function ######" << std::endl;
 
+        Element root("root");
+
+        document_type document(&root);
         
-        // couldn't use an inline version of this function... why?
-        // mapping
+        {
+            std::vector<std::string> texts { "einstein", "newton", "pithagoras", "poincare" };
+            
+            // join
+            auto selection = document
+            .selectAll(tag_predicate("person"), gen_iter)
+            .data(texts);
+            
+            // append elements
+            selection
+            .enter()
+            .append([](Element* parent, const std::string& s) {
+                return &parent->append("person");
+            });
+            
+            // set name;
+            selection
+            .call([](Element* e, const std::string& s) {
+                e->attr("name",s);
+            });
+        }
         
-        using mapping_type = std::function<list_type(const list_type&)> ;
+        std::cout << root << std::endl;
         
-//        std::function<list_type(const list_type&)> mapping = [](const list_type &s) {
-//            return s;
-//        };
+        // now is the time to join with a different set of strings
+        {
+            std::vector<std::string> update_texts { "einstein", "poincare", "feynman" };
+        
+
+            using s2s_type = std::function<std::string(const std::string&)> ;
+            using e2s_type = std::function<std::string(const Element&)> ;
+            
+            
+            s2s_type mapping_s = [](const std::string &s) -> std::string {
+                return s;
+            };
+
+            e2s_type mapping_e = [](const Element &e) -> std::string {
+                return e.attr("name");
+            };
+            
+            // join
+            auto selection = document
+            .selectAll(tag_predicate("person"), gen_iter)
+            .data(update_texts, mapping_s, mapping_e);
+            
+            //
+            selection
+            .exit()
+            .remove([](Element *e) { e->remove(); });
+            
+            //
+            selection
+            .enter()
+            .append([](Element* parent, const std::string& s) {
+                return &parent->append("person");
+            });
+
+            //
+            selection
+            .call([](Element* e, const std::string& s) {
+                e->attr("name",s);
+            });
+            
+        }
+        
+        std::cout << root << std::endl;
+        
+        
+        
+        
+        
+        
+        
+        // how to join the current selection with the new
+        // data coming in:
+        
+        // to avoid a O(n^2) search if we give just a "match(Element, Data)"
+        // we can sort the elements "<"
+        
+        
+        // assume Data element is sortable: map Element -> Data
+        // match(Element,Data) lt(Element,Data) lt(Data,Data)
+        
+        // receive a vector of Data
         
         //
-        auto s2 = s1
-        .selectAll(tag_predicate("name"), gen_iter)
-        .data( (mapping_type) [](const list_type &s) { return s; });
-        
-        // .data(mapping);
-        
-        std::cout << s2 << std::endl;
-        
-        s2.enter()
-        .append([](Element* parent, const std::string &st) { return &parent->append("name"); });
-        
-        s2
-        .call([](Element* e, std::string s) { e->attr("str", s); });
-        
-        std::cout << root;
+        // sort the input Data
+        //
+        // for each element do a binary search to find Data entry that matches
+        //
+        // assign that element to that data
+        //
+    
     }
+    
+    
+    
+
+    {
+        std::cout << "##### forward data join and use of a mapping function ######" << std::endl;
+        
+        using list_type = std::vector<std::string>;
+        
+        Element root("root");
+        
+        document_type document(&root);
+        
+        {
+            std::vector<list_type> names { {"einstein","gauss","feynman"}, {"pithagoras","newton"} };
+            
+            // append lists
+            auto s1 = document
+            .selectAll(tag_predicate("list"), gen_iter)
+            .data(names);
+            
+            s1.enter()
+            .append([](Element* parent, const list_type &list) { return &parent->append("list"); });
+            
+            // couldn't use an inline version of this function... why?
+            // mapping
+            
+            using mapping_type = std::function<list_type(const list_type&)> ;
+            
+            //
+            auto s2 = s1
+            .selectAll(tag_predicate("name"), gen_iter)
+            .data( (mapping_type) [](const list_type &s) { return s; });
+            
+            s2.enter()
+            .append([](Element* parent, const std::string &st) { return &parent->append("name"); });
+            
+            s2
+            .call([](Element* e, std::string s) { e->attr("str", s); });
+            
+            std::cout << root;
+        }
+        
+        {
+            std::vector<list_type> names { {"feynman","gauss","poincare"}, {"einstein","pithagoras"}, {"euclides", "newton"} };
+            
+            using s2s_type = std::function<std::string(const std::string&)> ;
+            using e2s_type = std::function<std::string(const Element&)> ;
+            
+            s2s_type mapping_s = [](const std::string &s) -> std::string {
+                return s;
+            };
+            
+            e2s_type mapping_e = [](const Element &e) -> std::string {
+                return e.attr("str");
+            };
+
+            // append lists
+            auto s1 = document
+            .selectAll(tag_predicate("list"), gen_iter)
+            .data(names);
+            
+            s1
+            .enter()
+            .append([](Element* parent, const list_type &list) { return &parent->append("list"); });
+            
+            // couldn't use an inline version of this function... why?
+            // mapping
+            
+            using mapping_type = std::function<list_type(const list_type&)> ;
+            
+            //
+            auto s2 = s1
+            .selectAll(tag_predicate("name"), gen_iter)
+            .data( (mapping_type) [](const list_type &s) { return s; }, mapping_s, mapping_e);
+
+            s2
+            .exit()
+            .remove([](Element *e) { e->remove(); });
+            
+            s2.enter()
+            .append([](Element* parent, const std::string &st) { return &parent->append("name"); });
+            
+            s2
+            .call([](Element* e, std::string s) { e->attr("str", s); });
+            
+            std::cout << root;
+        }
+        
+        
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
 }
 

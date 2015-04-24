@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <deque>
+#include <unordered_map>
 
 /*! \brief d3 data driven documents selection mechanism for C++
  *
@@ -103,9 +104,20 @@ namespace d3cpp {
         template <typename U>
         Selection<E,U> data(const std::vector<U>& data);
 
+        template <typename U, typename K>
+        Selection<E,U> data(const std::vector<U>& data,
+                            std::function<K(const U&)> data2key,
+                            std::function<K(const E&)> elem2key);
+        
         template <typename U>
         Selection<E,U> data(std::function<std::vector<U>(const T&)>); // forwarding data based on original data
         
+
+        template <typename U, typename K>
+        Selection<E,U> data(std::function<std::vector<U>(const T&)> mapping,
+                            std::function<K(const U&)> data2key,
+                            std::function<K(const E&)> elem2key);
+
         // attr and append should be abstracted to applying a function...
         // Selection<E,T>& attr(const std::string &key,  std::function<std::string(T,int)> f);
         selection_type        append(append_function_type a);
@@ -353,6 +365,71 @@ namespace d3cpp {
 
     
     template <typename E, typename T>
+    template <typename U, typename K>
+    Selection<E,U> Selection<E,T>::data(const std::vector<U>& data,
+                                        std::function<K(const U&)> data2key,
+                                        std::function<K(const E&)> elem2key)
+    {
+        
+        
+        using result_selection_type = Selection<E,U>;
+        using result_group_type     = typename result_selection_type::group_type;
+        
+        result_selection_type result;
+        
+        // just the bare update part here... not enter or exit
+        // match by index
+        
+        result._enterSelection_init();
+        Selection<E,U>& exit_selection = result._exitSelection_init();
+        
+        //
+        std::unordered_map<K,const U*> key2data;
+        std::for_each(data.begin(), data.end(), [&](const U& d) {
+            key2data[data2key(d)] = &d;
+        });
+        
+        for (auto &g: groups) {
+            
+            auto &new_group = result._group_add(g->parent.element);
+
+            result_group_type* exit_group = nullptr;
+            
+            for (auto &e: g->elements) {
+                auto k = elem2key(*e.element);
+                
+                auto it = key2data.find(k);
+                
+                if (it == key2data.end()) {
+                    if (!exit_group) {
+                        exit_group = &exit_selection._group_add(g->parent.element);
+                    }
+                    exit_group->add(e.element);
+                }
+                else {
+                    new_group.add(e.element, *it->second);
+                    key2data.erase(it);
+                }
+            }
+            
+            if (key2data.size() > 0) {
+                std::vector<U> enter_data_for_g;
+                enter_data_for_g.reserve(key2data.size());
+                for (auto it: key2data) {
+                    enter_data_for_g.push_back(*it.second);
+                }
+                result._enterSelection_add(&new_group, 0, enter_data_for_g); // might use move semantics for vectors here
+            }
+        }
+        
+        return result;
+    }
+
+    
+    
+    
+    
+    template <typename E, typename T>
     template <typename U>
     Selection<E,U> Selection<E,T>::data(std::function<std::vector<U>(const T&)> mapping) {
         Selection<E,U> result;
@@ -400,6 +477,96 @@ namespace d3cpp {
         
         return result;
     }
+    
+    
+    
+    
+    
+    template <typename E, typename T>
+    template <typename U, typename K>
+    Selection<E,U> Selection<E,T>::data(std::function<std::vector<U>(const T&)> mapping,
+                                        std::function<K(const U&)> data2key,
+                                        std::function<K(const E&)> elem2key)
+    {
+        
+        
+        using result_selection_type = Selection<E,U>;
+        using result_group_type     = typename result_selection_type::group_type;
+        
+        result_selection_type result;
+        
+        
+        
+        // just the bare update part here... not enter or exit
+        // match by index
+        
+        result._enterSelection_init();
+        
+        Selection<E,U>& exit_selection = result._exitSelection_init();
+        
+        for (auto &g: groups) {
+            
+            auto data = mapping(g->parent.value);
+            
+            std::unordered_map<K,const U*> key2data;
+            std::for_each(data.begin(), data.end(), [&](const U& d) {
+                key2data[data2key(d)] = &d;
+            });
+            
+            auto &new_group = result._group_add(g->parent.element);
+            
+            result_group_type* exit_group = nullptr;
+            
+            for (auto &e: g->elements) {
+                auto k = elem2key(*e.element);
+                
+                auto it = key2data.find(k);
+                
+                if (it == key2data.end()) {
+                    if (!exit_group) {
+                        exit_group = &exit_selection._group_add(g->parent.element);
+                    }
+                    exit_group->add(e.element);
+                }
+                else {
+                    new_group.add(e.element, *it->second);
+                    key2data.erase(it);
+                }
+            }
+            
+            if (key2data.size() > 0) {
+                std::vector<U> enter_data_for_g;
+                enter_data_for_g.reserve(key2data.size());
+                for (auto it: key2data) {
+                    enter_data_for_g.push_back(*it.second);
+                }
+                result._enterSelection_add(&new_group, 0, enter_data_for_g); // might use move semantics for vectors here
+            }
+        }
+        
+        return result;
+
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     template<typename E, typename T>
     auto Selection<E,T>::_enterSelection_init(const std::vector<T>& extra_data) -> enter_selection_type& {
