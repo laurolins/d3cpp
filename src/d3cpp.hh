@@ -79,7 +79,7 @@ namespace d3cpp {
         
         using predicate_type       = std::function<bool(const E*)>;
         using append_function_type = std::function<E*(E*)>;
-        using call_type            = std::function<void(E*, T)>;
+        using call_type            = std::function<void(E*, const T&)>;
 
 
         
