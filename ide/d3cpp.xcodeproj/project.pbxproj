@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		ED9C3CF71ACCD50100D7C86A /* example.cc in Sources */ = {isa = PBXBuildFile; fileRef = ED9C3CF61ACCD50100D7C86A /* example.cc */; };
+		ED16E0EE1BE278C20092F5EB /* example1.cc in Sources */ = {isa = PBXBuildFile; fileRef = ED16E0ED1BE278C20092F5EB /* example1.cc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -23,8 +23,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		ED16E0ED1BE278C20092F5EB /* example1.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = example1.cc; path = ../examples/example1.cc; sourceTree = "<group>"; };
 		ED9C3CEB1ACCD4AD00D7C86A /* d3cpp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = d3cpp; sourceTree = BUILT_PRODUCTS_DIR; };
-		ED9C3CF61ACCD50100D7C86A /* example.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = example.cc; path = ../src/example.cc; sourceTree = "<group>"; };
 		EDAD1E151AD42941009C493D /* d3cpp.hh */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = d3cpp.hh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -58,7 +58,7 @@
 		ED9C3CF51ACCD4F600D7C86A /* main */ = {
 			isa = PBXGroup;
 			children = (
-				ED9C3CF61ACCD50100D7C86A /* example.cc */,
+				ED16E0ED1BE278C20092F5EB /* example1.cc */,
 				EDAD1E151AD42941009C493D /* d3cpp.hh */,
 			);
 			name = main;
@@ -121,7 +121,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ED9C3CF71ACCD50100D7C86A /* example.cc in Sources */,
+				ED16E0EE1BE278C20092F5EB /* example1.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
